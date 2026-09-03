@@ -119,11 +119,13 @@ terrain_cells_valued <- sliced_surface %>%
 solid_layers <- terrain_cells_valued %>% 
   group_by(z_layer) %>% 
   summarize(geometry = st_union(x), .groups = "drop") %>% 
+  st_cast("POLYGON") %>%
   arrange(z_layer)
 
 # Punch out the nested pieces to create true non-overlapping rings/ribbons
 hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   
+  #i <- 5
   current_layer <- solid_layers[i, ]
   
   # Find other layers whose centroids are inside the current layer
