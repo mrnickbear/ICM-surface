@@ -1,6 +1,6 @@
 #Goal - convert a Civil 3D surface into layer cake bands that don't overlap, for ICM ground modification
 #
-#
+#test
 #Civil 3D
 #1 - turn on border and contours with desired interval
 #2 - Select surface, Surface Tools panel, Extract from Surface, Border and Major Contour, save drawing.
