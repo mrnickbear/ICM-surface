@@ -14,6 +14,7 @@ library(mapview)
 #For the Z value extraction
 library(tidyr)
 library(purrr)
+library(glue)
 
 # 1. Load the DXF file
 # Note: Ensure the 'Layer' or 'Elevation' attribute name matches your file
@@ -125,7 +126,8 @@ solid_layers <- terrain_cells_valued %>%
 # Punch out the nested pieces to create true non-overlapping rings/ribbons
 hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   
-  #i <- 7
+  #i <- 6
+  cat(glue("punching out i=",i,"\n\n"))
   current_layer <- solid_layers[i, ]
   
   # Find other layers whose centroids are inside the current layer
@@ -136,12 +138,17 @@ hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   if (any(is_inside)) {
     internal_mask <- st_union(other_layers[is_inside, ])
     current_layer$geometry <- st_difference(
+      
       st_make_valid(internal_mask),
-      st_make_valid(current_layer$geometry)
+      st_make_valid(current_layer)
+      
     )
   }
   
   # mapview(current_layer)
+  # mapview(other_layers)
+  # mapview(other_layers)+mapview(centroids)
+  
   # mapview(internal_mask)+mapview( current_layer)
 
   return(current_layer)
