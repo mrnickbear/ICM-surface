@@ -121,12 +121,14 @@ solid_layers <- terrain_cells_valued %>%
   group_by(z_layer) %>% 
   summarize(geometry = st_union(x), .groups = "drop") %>% 
   st_cast("POLYGON") %>%
-  arrange(z_layer)
+  mutate(area = as.numeric(st_area(geometry))) %>%
+  filter(area>10) %>%
+  arrange(area)
 
 # Punch out the nested pieces to create true non-overlapping rings/ribbons
 hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   
-  #i <- 6
+  #i <- 4
   cat(glue("punching out i=",i,"\n\n"))
   current_layer <- solid_layers[i, ]
   current_geom <- st_make_valid(st_geometry(current_layer))
@@ -134,38 +136,30 @@ hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   # Find nested layers in either direction
   other_layers <- solid_layers[-i, ]
   centroids <- st_centroid(other_layers)
-  current_centroid <- st_centroid(current_layer)
-  other_inside_current <- st_intersects(centroids, current_layer, sparse = FALSE)[, 1]
-  current_inside_other <- st_intersects(current_centroid, other_layers, sparse = FALSE)[1, ]
-  is_inside <- other_inside_current | current_inside_other
+  is_inside <- st_intersects(centroids, current_layer, sparse = FALSE)[, 1]
   
   if (any(is_inside)) {
     internal_mask <- st_make_valid(st_union(other_layers[is_inside, ]))
+    
     difference <- st_difference(current_geom, internal_mask)
-    
-    if (all(st_is_empty(difference))) {
-      reverse_difference <- st_difference(internal_mask, current_geom)
-      if (!all(st_is_empty(reverse_difference))) {
-        difference <- reverse_difference
-      }
-    }
-    
-    current_layer$geometry <- difference
+
+    current_layer <- difference %>% st_cast("POLYGON") %>% st_as_sf()
+    current_layer$z_layer <- solid_layers[i, ]$z_layer
   }
   
   # mapview(current_layer)
   # mapview(other_layers)
   # mapview(other_layers)+mapview(centroids)
-  
-  # mapview(internal_mask)+mapview( current_layer)
+  # mapview(difference)
+  # mapview(internal_mask)+mapview( current_geom)
 
   return(current_layer)
 })
 
 # Re-combine and calculate the true individual ring areas
 final_layer_cake <- do.call(rbind, hollow_layers) %>% 
-  st_as_sf() %>% 
-  mutate(area = as.numeric(st_area(geometry)))
+  # st_as_sf() %>% 
+  mutate(area = as.numeric(st_area(x))) %>% filter(area > 10)
 
 # =================================================================
 # STEP 5: Verification Print & Plot
@@ -176,7 +170,8 @@ plot(final_layer_cake["z_layer"],
      pal = terrain.colors(nrow(final_layer_cake)), 
      main = "True Layer-Cake Bands (Open Contours Accounted For)")
 
-
+mapview(final_layer_cake[4,])
+mapview(final_layer_cake, z = "z_layer")
 
 
 # mapview(raw_data)
