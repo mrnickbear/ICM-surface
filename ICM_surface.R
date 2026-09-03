@@ -129,20 +129,28 @@ hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   #i <- 6
   cat(glue("punching out i=",i,"\n\n"))
   current_layer <- solid_layers[i, ]
+  current_geom <- st_make_valid(st_geometry(current_layer))
   
-  # Find other layers whose centroids are inside the current layer
+  # Find nested layers in either direction
   other_layers <- solid_layers[-i, ]
   centroids <- st_centroid(other_layers)
-  is_inside <- st_intersects(centroids, current_layer, sparse = FALSE)[, 1]
+  current_centroid <- st_centroid(current_layer)
+  other_inside_current <- st_intersects(centroids, current_layer, sparse = FALSE)[, 1]
+  current_inside_other <- st_intersects(current_centroid, other_layers, sparse = FALSE)[1, ]
+  is_inside <- other_inside_current | current_inside_other
   
   if (any(is_inside)) {
-    internal_mask <- st_union(other_layers[is_inside, ])
-    current_layer$geometry <- st_difference(
-      
-      st_make_valid(internal_mask),
-      st_make_valid(current_layer)
-      
-    )
+    internal_mask <- st_make_valid(st_union(other_layers[is_inside, ]))
+    difference <- st_difference(current_geom, internal_mask)
+    
+    if (all(st_is_empty(difference))) {
+      reverse_difference <- st_difference(internal_mask, current_geom)
+      if (!all(st_is_empty(reverse_difference))) {
+        difference <- reverse_difference
+      }
+    }
+    
+    current_layer$geometry <- difference
   }
   
   # mapview(current_layer)
