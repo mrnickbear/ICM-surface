@@ -125,7 +125,7 @@ solid_layers <- terrain_cells_valued %>%
 # Punch out the nested pieces to create true non-overlapping rings/ribbons
 hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   
-  #i <- 5
+  #i <- 7
   current_layer <- solid_layers[i, ]
   
   # Find other layers whose centroids are inside the current layer
@@ -136,10 +136,14 @@ hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   if (any(is_inside)) {
     internal_mask <- st_union(other_layers[is_inside, ])
     current_layer$geometry <- st_difference(
-      st_make_valid(current_layer$geometry), 
-      st_make_valid(internal_mask)
+      st_make_valid(internal_mask),
+      st_make_valid(current_layer$geometry)
     )
   }
+  
+  # mapview(current_layer)
+  # mapview(internal_mask)+mapview( current_layer)
+
   return(current_layer)
 })
 
@@ -163,16 +167,16 @@ plot(final_layer_cake["z_layer"],
 # mapview(raw_data)
 # mapview(contours_simple)
 
-mapview(final_layer_cake, z = "z_layer")
-
-mapview(cake_layers, z = "z_layer")
-
-mapview( arrange(desc(solid_layers)), z = "z_layer")
-
-
-mapview( 
-  filter(solid_layers, z_layer  < 10)
-  )
+# mapview(final_layer_cake, z = "z_layer")
+# 
+# mapview(cake_layers, z = "z_layer")
+# 
+# mapview( arrange(desc(solid_layers)), z = "z_layer")
+# 
+# 
+# mapview( 
+#   filter(solid_layers, z_layer  < 10)
+#   )
 
 flc_areas <- solid_layers %>%
   mutate(
