@@ -140,8 +140,14 @@ hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   
   if (any(is_inside)) {
     internal_mask <- st_make_valid(st_union(other_layers[is_inside, ]))
+    current_area <- sum(as.numeric(st_area(current_geom)))
+    mask_area <- sum(as.numeric(st_area(internal_mask)))
     
-    difference <- st_difference(current_geom, internal_mask)
+    difference <- if (current_area >= mask_area) {
+      st_difference(current_geom, internal_mask)
+    } else {
+      st_difference(internal_mask, current_geom)
+    }
 
     current_layer <- difference %>% st_cast("POLYGON") %>% st_as_sf()
     current_layer$z_layer <- solid_layers[i, ]$z_layer
