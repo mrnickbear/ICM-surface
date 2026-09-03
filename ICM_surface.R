@@ -65,7 +65,8 @@ raw_data <- raw_data %>%
   })) %>%
   unnest_wider(z_stats) %>%
   st_as_sf() %>%
-  mutate(z_variance = max_z - min_z)
+  mutate(z_variance = max_z - min_z) %>%
+  st_zm(drop = TRUE, what = "ZM")
 
 boundary_data <- raw_data %>% filter(z_variance > 0)
 contour_data  <- raw_data %>% filter(z_variance == 0 | is.na(z_variance))
@@ -123,7 +124,6 @@ solid_layers <- terrain_cells_valued %>%
 # Punch out the nested pieces to create true non-overlapping rings/ribbons
 hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   
-  i <- 5
   current_layer <- solid_layers[i, ]
   
   # Find other layers whose centroids are inside the current layer
@@ -142,7 +142,7 @@ hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
 })
 
 # Re-combine and calculate the true individual ring areas
-final_layer_cake <- do_call(rbind, hollow_layers) %>% 
+final_layer_cake <- do.call(rbind, hollow_layers) %>% 
   st_as_sf() %>% 
   mutate(area = as.numeric(st_area(geometry)))
 
