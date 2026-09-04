@@ -140,48 +140,51 @@ solid_layers <- terrain_cells_valued %>%
   filter(area>10) %>%
   arrange(outer_area)
 
-# Punch out the nested pieces to create true non-overlapping rings/ribbons
-hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
+# Punch out previously kept smaller pieces to create true non-overlapping rings/ribbons
+hollow_layers <- list()
+occupied_geometry <- st_sfc(crs = st_crs(solid_layers))
+
+for (i in seq_len(nrow(solid_layers))) {
   
   #i <- 26
   cat(glue("punching out i=",i,"\n\n"))
   current_layer <- solid_layers[i, ]
   current_geom <- st_make_valid(st_geometry(current_layer))
   
-  # Find layers nested inside the current layer using the pre-hole footprint area
-  other_layers <- solid_layers[-i, ]
-  is_smaller <- other_layers$outer_area < current_layer$outer_area
-  is_inside <- st_covered_by(
-    st_make_valid(st_geometry(other_layers)),
-    current_geom,
-    sparse = FALSE
-  )[, 1] & is_smaller
-  
-  if (any(is_inside)) {
-    internal_mask <- st_make_valid(st_union(other_layers[is_inside, ]))
-    difference <- st_difference(current_geom, internal_mask)
-    difference <- difference[!st_is_empty(difference)]
+  if (length(occupied_geometry) > 0) {
+    overlaps <- st_intersects(occupied_geometry, current_geom, sparse = FALSE)[, 1]
     
-    if (length(difference) > 0) {
-      difference <- st_cast(difference, "POLYGON")
+    if (any(overlaps)) {
+      internal_mask <- st_make_valid(st_union(occupied_geometry[overlaps]))
+      difference <- st_difference(current_geom, internal_mask)
       difference <- difference[!st_is_empty(difference)]
+      
+      if (length(difference) > 0) {
+        difference <- st_cast(difference, "POLYGON")
+        difference <- difference[!st_is_empty(difference)]
+      }
       
       if (length(difference) > 0) {
         current_layer <- st_sf(
           z_layer = rep(solid_layers[i, ]$z_layer, length(difference)),
           geometry = difference
         )
+      } else {
+        current_layer <- NULL
       }
     }
   }
   
+  if (!is.null(current_layer)) {
+    current_layer <- current_layer[, c("z_layer", "geometry")]
+    hollow_layers[[length(hollow_layers) + 1]] <- current_layer
+    occupied_geometry <- c(occupied_geometry, st_geometry(current_layer))
+  }
+  
   # mapview(current_layer)
-  # mapview(other_layers)
   # mapview(difference)
   # mapview(internal_mask)+mapview( current_geom)
-
-  return(current_layer)
-})
+}
 
 # 1. Rename all geometry columns to 'geometry'
 hollow_layers_clean <- lapply(hollow_layers, function(df) {
