@@ -114,12 +114,12 @@ terrain_cells_valued <- sliced_surface %>%
   left_join(cell_elevations, by = "cell_id")
 
 # =================================================================
-# STEP 4: Dissolve and Hollow Out the Cake Layers
+# STEP 4: Prepare and Hollow Out the Cake Layers
 # =================================================================
-# Now, grouping by z_layer will yield distinct, staggered solid shapes!
+# Keep each polygon piece separate so multipart layers are not collapsed.
 solid_layers <- terrain_cells_valued %>% 
-  group_by(z_layer) %>% 
-  summarize(geometry = st_union(x), .groups = "drop") %>% 
+  select(z_layer) %>%
+  rename(geometry = x) %>%
   st_cast("POLYGON") %>%
   mutate(area = as.numeric(st_area(geometry))) %>%
   filter(area>10) %>%
@@ -133,24 +133,20 @@ hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   current_layer <- solid_layers[i, ]
   current_geom <- st_make_valid(st_geometry(current_layer))
   
-  # Find nested layers in either direction
+  # Find smaller layers nested inside the current layer
   other_layers <- solid_layers[-i, ]
   centroids <- st_centroid(other_layers)
-  is_inside <- st_intersects(centroids, current_layer, sparse = FALSE)[, 1]
+  is_smaller <- other_layers$area < current_layer$area
+  is_inside <- st_intersects(centroids, current_layer, sparse = FALSE)[, 1] & is_smaller
   
   if (any(is_inside)) {
     internal_mask <- st_make_valid(st_union(other_layers[is_inside, ]))
-    current_area <- sum(as.numeric(st_area(current_geom)))
-    mask_area <- sum(as.numeric(st_area(internal_mask)))
-    
-    difference <- if (current_area >= mask_area) {
-      st_difference(current_geom, internal_mask)
-    } else {
-      st_difference(internal_mask, current_geom)
-    }
+    difference <- st_difference(current_geom, internal_mask)
 
-    current_layer <- difference %>% st_cast("POLYGON") %>% st_as_sf()
-    current_layer$z_layer <- solid_layers[i, ]$z_layer
+    current_layer <- st_sf(
+      z_layer = solid_layers[i, ]$z_layer,
+      geometry = st_cast(difference, "POLYGON")
+    )
   }
   
   # mapview(current_layer)
