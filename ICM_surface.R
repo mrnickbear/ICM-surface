@@ -116,14 +116,29 @@ terrain_cells_valued <- sliced_surface %>%
 # =================================================================
 # STEP 4: Prepare and Hollow Out the Cake Layers
 # =================================================================
+outer_polygon_area <- function(geometry) {
+  polygons <- st_cast(st_geometry(geometry), "POLYGON")
+  crs <- st_crs(polygons)
+  
+  sum(vapply(seq_along(polygons), function(i) {
+    polygon <- polygons[[i]]
+    as.numeric(st_area(st_sfc(st_polygon(list(polygon[[1]])), crs = crs)))
+  }, numeric(1)))
+}
+
 # Keep each polygon piece separate so multipart layers are not collapsed.
 solid_layers <- terrain_cells_valued %>% 
   select(z_layer) %>%
   rename(geometry = x) %>%
   st_cast("POLYGON") %>%
-  mutate(area = as.numeric(st_area(geometry))) %>%
+  mutate(
+    area = as.numeric(st_area(geometry)),
+    outer_area = vapply(seq_along(geometry), function(i) {
+      outer_polygon_area(geometry[i])
+    }, numeric(1))
+  ) %>%
   filter(area>10) %>%
-  arrange(area)
+  arrange(outer_area)
 
 # Punch out the nested pieces to create true non-overlapping rings/ribbons
 hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
@@ -133,10 +148,10 @@ hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   current_layer <- solid_layers[i, ]
   current_geom <- st_make_valid(st_geometry(current_layer))
   
-  # Find smaller layers nested inside the current layer
+  # Find layers nested inside the current layer using the pre-hole footprint area
   other_layers <- solid_layers[-i, ]
   centroids <- st_point_on_surface(other_layers)
-  is_smaller <- other_layers$area < current_layer$area
+  is_smaller <- other_layers$outer_area < current_layer$outer_area
   is_inside <- st_intersects(centroids, current_layer, sparse = FALSE)[, 1] & is_smaller
   
   if (any(is_inside)) {
