@@ -81,7 +81,7 @@ contour_lines <- st_cast(contour_data, "LINESTRING")
 
 # Combine the boundary outer line and the open contour lines.
 # This forces the open lines to touch the boundary line, sealing the edges.
-line_network <- st_union(st_geometry(contour_lines), boundary_line)
+line_network <- st_union(c(st_geometry(contour_lines), boundary_line))
 
 # Polygonize the combined network into independent jigsaw cells
 sliced_surface <- line_network %>% 
@@ -94,8 +94,11 @@ sliced_surface <- line_network %>%
 # STEP 3: Assign Elevations Based on Bordering Lines
 # =================================================================
 # Because the lines are open, a cell sits *between* two contours.
-# We will find all contour lines that touch each cell's edge.
-cell_line_match <- st_join(sliced_surface, contour_data, join = st_intersects)
+# We will find contour lines that touch each cell's edge.
+cell_edges <- sliced_surface %>%
+  st_set_geometry(st_boundary(st_geometry(.)))
+
+cell_line_match <- st_join(cell_edges, contour_data, join = st_intersects)
 
 cell_elevations <- cell_line_match %>% 
   st_drop_geometry() %>% 
