@@ -143,7 +143,7 @@ solid_layers <- terrain_cells_valued %>%
 # Punch out the nested pieces to create true non-overlapping rings/ribbons
 hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   
-  #i <- 28
+  #i <- 26
   cat(glue("punching out i=",i,"\n\n"))
   current_layer <- solid_layers[i, ]
   current_geom <- st_make_valid(st_geometry(current_layer))
