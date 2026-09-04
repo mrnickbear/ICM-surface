@@ -128,14 +128,14 @@ solid_layers <- terrain_cells_valued %>%
 # Punch out the nested pieces to create true non-overlapping rings/ribbons
 hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   
-  #i <- 4
+  #i <- 28
   cat(glue("punching out i=",i,"\n\n"))
   current_layer <- solid_layers[i, ]
   current_geom <- st_make_valid(st_geometry(current_layer))
   
   # Find smaller layers nested inside the current layer
   other_layers <- solid_layers[-i, ]
-  centroids <- st_centroid(other_layers)
+  centroids <- st_point_on_surface(other_layers)
   is_smaller <- other_layers$area < current_layer$area
   is_inside <- st_intersects(centroids, current_layer, sparse = FALSE)[, 1] & is_smaller
   
