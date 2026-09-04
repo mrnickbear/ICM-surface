@@ -133,15 +133,21 @@ hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   current_layer <- solid_layers[i, ]
   current_geom <- st_make_valid(st_geometry(current_layer))
   
-  # Find smaller layers nested inside the current layer
+  # Find nested layers in either direction
   other_layers <- solid_layers[-i, ]
   centroids <- st_centroid(other_layers)
-  is_smaller <- other_layers$area < current_layer$area
-  is_inside <- st_intersects(centroids, current_layer, sparse = FALSE)[, 1] & is_smaller
+  is_inside <- st_intersects(centroids, current_layer, sparse = FALSE)[, 1]
   
   if (any(is_inside)) {
     internal_mask <- st_make_valid(st_union(other_layers[is_inside, ]))
-    difference <- st_difference(current_geom, internal_mask)
+    current_area <- sum(as.numeric(st_area(current_geom)))
+    mask_area <- sum(as.numeric(st_area(internal_mask)))
+    
+    difference <- if (current_area >= mask_area) {
+      st_difference(current_geom, internal_mask)
+    } else {
+      st_difference(internal_mask, current_geom)
+    }
 
     current_layer <- difference %>% st_cast("POLYGON") %>% st_as_sf()
     current_layer$z_layer <- solid_layers[i, ]$z_layer
@@ -156,10 +162,23 @@ hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   return(current_layer)
 })
 
+# 1. Rename all geometry columns to 'geometry'
+hollow_layers_clean <- lapply(hollow_layers, function(df) {
+  st_geometry(df) <- "geometry"
+  return(df)
+})
+
+# 2. Select only common columns (e.g., z_layer and geometry)
+hollow_layers_clean <- lapply(hollow_layers_clean, function(df) {
+  df[, c("z_layer", "geometry")]
+})
+
 # Re-combine and calculate the true individual ring areas
-final_layer_cake <- do.call(rbind, hollow_layers) %>% 
+final_layer_cake <- do.call(rbind, hollow_layers_clean) %>% 
   # st_as_sf() %>% 
-  mutate(area = as.numeric(st_area(x))) %>% filter(area > 10)
+  mutate(area = as.numeric(st_area(geometry))) %>% filter(area > 10)
+
+
 
 # =================================================================
 # STEP 5: Verification Print & Plot
