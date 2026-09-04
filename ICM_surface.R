@@ -150,23 +150,33 @@ hollow_layers <- lapply(1:nrow(solid_layers), function(i) {
   
   # Find layers nested inside the current layer using the pre-hole footprint area
   other_layers <- solid_layers[-i, ]
-  centroids <- st_point_on_surface(other_layers)
   is_smaller <- other_layers$outer_area < current_layer$outer_area
-  is_inside <- st_intersects(centroids, current_layer, sparse = FALSE)[, 1] & is_smaller
+  is_inside <- st_covered_by(
+    st_make_valid(st_geometry(other_layers)),
+    current_geom,
+    sparse = FALSE
+  )[, 1] & is_smaller
   
   if (any(is_inside)) {
     internal_mask <- st_make_valid(st_union(other_layers[is_inside, ]))
     difference <- st_difference(current_geom, internal_mask)
-
-    current_layer <- st_sf(
-      z_layer = solid_layers[i, ]$z_layer,
-      geometry = st_cast(difference, "POLYGON")
-    )
+    difference <- difference[!st_is_empty(difference)]
+    
+    if (length(difference) > 0) {
+      difference <- st_cast(difference, "POLYGON")
+      difference <- difference[!st_is_empty(difference)]
+      
+      if (length(difference) > 0) {
+        current_layer <- st_sf(
+          z_layer = rep(solid_layers[i, ]$z_layer, length(difference)),
+          geometry = difference
+        )
+      }
+    }
   }
   
   # mapview(current_layer)
   # mapview(other_layers)
-  # mapview(other_layers)+mapview(centroids)
   # mapview(difference)
   # mapview(internal_mask)+mapview( current_geom)
 
