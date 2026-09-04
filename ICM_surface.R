@@ -79,9 +79,54 @@ contour_data  <- raw_data %>% filter(z_variance == 0 | is.na(z_variance))
 boundary_line <- st_geometry(boundary_data) %>% st_cast("LINESTRING")
 contour_lines <- st_cast(contour_data, "LINESTRING")
 
+extend_contours_to_boundary <- function(contour_lines, boundary_line) {
+  boundary_geom <- st_union(boundary_line)
+  boundary_bbox <- st_bbox(boundary_geom)
+  boundary_diagonal <- sqrt(
+    (boundary_bbox[["xmax"]] - boundary_bbox[["xmin"]]) ^ 2 +
+      (boundary_bbox[["ymax"]] - boundary_bbox[["ymin"]]) ^ 2
+  )
+  boundary_tolerance <- boundary_diagonal * 0.0001
+  boundary_extension <- boundary_diagonal * 0.001
+  contour_geom <- st_geometry(contour_lines)
+  crs <- st_crs(contour_geom)
+  
+  extended_lines <- lapply(seq_along(contour_geom), function(i) {
+    coords <- st_coordinates(contour_geom[[i]])[, c("X", "Y"), drop = FALSE]
+    
+    if (nrow(coords) >= 2) {
+      start_point <- st_sfc(st_point(coords[1, ]), crs = crs)
+      end_point <- st_sfc(st_point(coords[nrow(coords), ]), crs = crs)
+      
+      if (as.numeric(st_distance(start_point, boundary_geom)) <= boundary_tolerance) {
+        direction <- coords[1, ] - coords[2, ]
+        direction_length <- sqrt(sum(direction ^ 2))
+        if (direction_length > 0) {
+          coords[1, ] <- coords[1, ] + boundary_extension * direction / direction_length
+        }
+      }
+      
+      if (as.numeric(st_distance(end_point, boundary_geom)) <= boundary_tolerance) {
+        direction <- coords[nrow(coords), ] - coords[nrow(coords) - 1, ]
+        direction_length <- sqrt(sum(direction ^ 2))
+        if (direction_length > 0) {
+          coords[nrow(coords), ] <- coords[nrow(coords), ] + boundary_extension * direction / direction_length
+        }
+      }
+    }
+    
+    st_linestring(coords)
+  })
+  
+  do.call(st_sfc, c(extended_lines, list(crs = crs)))
+}
+
+contour_lines_for_polygonizing <- extend_contours_to_boundary(contour_lines, boundary_line)
+
 # Combine the boundary outer line and the open contour lines.
-# This forces the open lines to touch the boundary line, sealing the edges.
-line_network <- st_union(c(st_geometry(contour_lines), boundary_line))
+# Extending boundary-touching contour ends just past the boundary lets polygonize
+# create closed boundary/contour bands for contours that do not close on themselves.
+line_network <- st_union(c(contour_lines_for_polygonizing, boundary_line))
 
 # Polygonize the combined network into independent jigsaw cells
 sliced_surface <- line_network %>% 
