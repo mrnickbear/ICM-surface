@@ -25,7 +25,9 @@ dxf_path <- paste0("S:\\HYD\\Projects - studies\\STUDIES\\R_Ochoa\\1_Project\\1.
                    "References\\Public Works Coordination 20251222\\4th-King-Yard_Grading-Drainage-Files\\",
                    "XCGRADA_nb_linesOnly_worldCS.dxf")
 
-raw_data <- st_read(dxf_path) %>% st_set_crs(2227)
+test_dxf <- "XCGRADA_nb_linesOnly_worldCS.dxf"
+
+raw_data <- st_read(test_dxf) %>% st_set_crs(2227)
 
 # dput(
 # raw_data[2,]
