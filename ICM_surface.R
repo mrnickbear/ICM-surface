@@ -257,12 +257,23 @@ final_layer_cake <- do.call(rbind, hollow_layers_clean) %>%
 # =================================================================
 print(final_layer_cake %>% st_drop_geometry() %>% select(z_layer, area))
 
-plot(final_layer_cake["z_layer"], 
-     pal = terrain.colors(nrow(final_layer_cake)), 
-     main = "True Layer-Cake Bands (Open Contours Accounted For)")
+# plot(final_layer_cake["z_layer"], 
+#      pal = terrain.colors(nrow(final_layer_cake)), 
+#      main = "True Layer-Cake Bands (Open Contours Accounted For)")
 
-mapview(final_layer_cake[4,])
+# mapview(final_layer_cake[4,])
 mapview(final_layer_cake, z = "z_layer")
+
+
+simp_final <- ms_simplify(final_layer_cake%>% 
+                            
+                            #Dual buffers to remove thin parts of ring
+                            st_buffer(dist = -1) %>%
+                            st_buffer(dist = 1),
+                          
+                          keep = 0.1)
+
+mapview(simp_final, z = "z_layer")
 
 
 # mapview(raw_data)
@@ -279,8 +290,8 @@ mapview(final_layer_cake, z = "z_layer")
 #   filter(solid_layers, z_layer  < 10)
 #   )
 
-flc_areas <- solid_layers %>%
-  mutate(
-    # Calculate area and strip the 'units' attribute for a clean numeric column
-    area = as.numeric(st_area(geometry))
-  )
+# flc_areas <- solid_layers %>%
+#   mutate(
+#     # Calculate area and strip the 'units' attribute for a clean numeric column
+#     area = as.numeric(st_area(geometry))
+#   )
