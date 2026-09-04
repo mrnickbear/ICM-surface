@@ -412,11 +412,11 @@ print(final_layer_cake %>% st_drop_geometry() %>% select(z_layer, area))
 #      main = "True Layer-Cake Bands (Open Contours Accounted For)")
 
 # mapview(final_layer_cake[4,])
-mapview(final_layer_cake, z = "z_layer")
+# mapview(final_layer_cake, z = "z_layer")
 
 
-simplify_buffer_distance <- 1
-simplify_min_area <- 10
+simplify_buffer_distance <- 5
+simplify_min_area <- 20
 simplify_snap_tolerance <- simplify_buffer_distance * 2
 
 simp_final <- ms_simplify(final_layer_cake %>% 
