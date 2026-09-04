@@ -184,7 +184,7 @@ cast_layer_polygons <- function(layers) {
     }
     
     polygons <- tryCatch(
-      st_collection_extract(layer_geometry, "POLYGON"),
+      suppressWarnings(st_collection_extract(layer_geometry, "POLYGON")),
       error = function(e) layer_geometry
     )
     polygons <- st_cast(polygons, "POLYGON", warn = FALSE)
@@ -215,6 +215,10 @@ remove_layer_overlaps <- function(layers) {
   }
   
   layers <- cast_layer_polygons(layers)
+  
+  if (nrow(layers) == 0) {
+    return(layers)
+  }
   
   layers <- layers %>%
     mutate(area = as.numeric(st_area(geometry))) %>%
@@ -285,8 +289,8 @@ clean_simplified_layers <- function(simplified_layers, original_layers, min_area
   gaps <- gaps[!st_is_empty(gaps)]
   
   if (length(gaps) > 0) {
-    gap_parts <- st_sf(geometry = st_collection_extract(gaps, "POLYGON")) %>%
-      st_cast("POLYGON") %>%
+    gap_parts <- st_sf(geometry = suppressWarnings(st_collection_extract(gaps, "POLYGON"))) %>%
+      st_cast("POLYGON", warn = FALSE) %>%
       mutate(area = as.numeric(st_area(geometry))) %>%
       filter(area > 0)
     
