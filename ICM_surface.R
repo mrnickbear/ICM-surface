@@ -174,6 +174,152 @@ outer_polygon_area <- function(geometry) {
   }, numeric(1)))
 }
 
+cast_layer_polygons <- function(layers) {
+  polygon_layers <- lapply(seq_len(nrow(layers)), function(i) {
+    layer_geometry <- st_geometry(layers[i, ])
+    geometry_type <- unique(as.character(st_geometry_type(layer_geometry)))
+    
+    if (all(!geometry_type %in% c("POLYGON", "MULTIPOLYGON", "GEOMETRYCOLLECTION"))) {
+      return(NULL)
+    }
+    
+    polygons <- tryCatch(
+      st_collection_extract(layer_geometry, "POLYGON"),
+      error = function(e) layer_geometry
+    )
+    polygons <- st_cast(polygons, "POLYGON", warn = FALSE)
+    polygons <- polygons[!st_is_empty(polygons)]
+    
+    if (length(polygons) == 0) {
+      return(NULL)
+    }
+    
+    st_sf(
+      z_layer = rep(layers[i, ]$z_layer, length(polygons)),
+      geometry = polygons
+    )
+  })
+  
+  polygon_layers <- polygon_layers[!vapply(polygon_layers, is.null, logical(1))]
+  
+  if (length(polygon_layers) == 0) {
+    return(st_sf(z_layer = numeric(), geometry = st_sfc(crs = st_crs(layers))))
+  }
+  
+  do.call(rbind, polygon_layers)
+}
+
+remove_layer_overlaps <- function(layers) {
+  if (nrow(layers) == 0) {
+    return(layers)
+  }
+  
+  layers <- cast_layer_polygons(layers)
+  
+  layers <- layers %>%
+    mutate(area = as.numeric(st_area(geometry))) %>%
+    arrange(area)
+  
+  clean_layers <- list()
+  occupied_geometry <- st_sfc(crs = st_crs(layers))
+  
+  for (i in seq_len(nrow(layers))) {
+    current_layer <- layers[i, ]
+    current_geom <- st_make_valid(st_geometry(current_layer))
+    
+    if (length(occupied_geometry) > 0) {
+      overlaps <- st_intersects(occupied_geometry, current_geom, sparse = FALSE)[, 1]
+      
+      if (any(overlaps)) {
+        overlap_mask <- st_make_valid(st_union(occupied_geometry[overlaps]))
+        current_geom <- st_difference(current_geom, overlap_mask)
+        current_geom <- current_geom[!st_is_empty(current_geom)]
+        
+        if (length(current_geom) > 0) {
+          current_geom <- st_cast(current_geom, "POLYGON")
+          current_geom <- current_geom[!st_is_empty(current_geom)]
+        }
+      }
+    }
+    
+    if (length(current_geom) > 0) {
+      current_layer <- st_sf(
+        z_layer = rep(layers[i, ]$z_layer, length(current_geom)),
+        geometry = current_geom
+      )
+      clean_layers[[length(clean_layers) + 1]] <- current_layer
+      occupied_geometry <- c(occupied_geometry, st_geometry(current_layer))
+    }
+  }
+  
+  do.call(rbind, clean_layers) %>%
+    mutate(area = as.numeric(st_area(geometry)))
+}
+
+clean_simplified_layers <- function(simplified_layers, original_layers, min_area, snap_tolerance) {
+  simplified_layers <- cast_layer_polygons(st_make_valid(simplified_layers)) %>%
+    mutate(area = as.numeric(st_area(geometry))) %>%
+    filter(area > min_area)
+  
+  if (nrow(simplified_layers) == 0) {
+    return(simplified_layers)
+  }
+  
+  snapped_geometry <- st_snap(
+    st_geometry(simplified_layers),
+    st_union(st_geometry(simplified_layers)),
+    tolerance = snap_tolerance
+  )
+  
+  simplified_layers <- simplified_layers %>%
+    st_set_geometry(st_make_valid(snapped_geometry)) %>%
+    cast_layer_polygons() %>%
+    mutate(area = as.numeric(st_area(geometry))) %>%
+    filter(area > min_area)
+  
+  simplified_layers <- remove_layer_overlaps(simplified_layers)
+  
+  original_footprint <- st_union(st_geometry(original_layers))
+  simplified_footprint <- st_union(st_geometry(simplified_layers))
+  gaps <- st_difference(original_footprint, simplified_footprint)
+  gaps <- gaps[!st_is_empty(gaps)]
+  
+  if (length(gaps) > 0) {
+    gap_parts <- st_sf(geometry = st_collection_extract(gaps, "POLYGON")) %>%
+      st_cast("POLYGON") %>%
+      mutate(area = as.numeric(st_area(geometry))) %>%
+      filter(area > 0)
+    
+    if (nrow(gap_parts) > 0) {
+      gap_buffers <- st_buffer(st_geometry(gap_parts), snap_tolerance)
+      neighbor_matrix <- st_intersects(gap_buffers, simplified_layers, sparse = FALSE)
+      
+      for (gap_index in seq_len(nrow(gap_parts))) {
+        neighbors <- which(neighbor_matrix[gap_index, ])
+        
+        if (length(neighbors) >= 2) {
+          gap_boundary <- st_boundary(st_geometry(gap_parts[gap_index, ]))
+          neighbor_boundaries <- st_boundary(st_geometry(simplified_layers[neighbors, ]))
+          shared_lengths <- as.numeric(st_length(st_intersection(gap_boundary, neighbor_boundaries)))
+          
+          if (all(shared_lengths == 0)) {
+            shared_lengths <- as.numeric(st_area(st_intersection(gap_buffers[gap_index], simplified_layers[neighbors, ])))
+          }
+          
+          target_index <- neighbors[which.max(shared_lengths)]
+          st_geometry(simplified_layers)[target_index] <- st_union(
+            st_geometry(simplified_layers[target_index, ]),
+            st_geometry(gap_parts[gap_index, ])
+          )
+        }
+      }
+    }
+  }
+  
+  remove_layer_overlaps(simplified_layers) %>%
+    filter(area > min_area)
+}
+
 # Keep each polygon piece separate so multipart layers are not collapsed.
 solid_layers <- terrain_cells_valued %>% 
   select(z_layer) %>%
@@ -265,13 +411,20 @@ print(final_layer_cake %>% st_drop_geometry() %>% select(z_layer, area))
 mapview(final_layer_cake, z = "z_layer")
 
 
-simp_final <- ms_simplify(final_layer_cake%>% 
-                            
-                            #Dual buffers to remove thin parts of ring
-                            st_buffer(dist = -1) %>%
-                            st_buffer(dist = 1),
-                          
-                          keep = 0.1)
+simplify_buffer_distance <- 1
+simplify_min_area <- 10
+simplify_snap_tolerance <- simplify_buffer_distance * 2
+
+simp_final <- ms_simplify(final_layer_cake %>% 
+                            # Dual buffers to remove thin parts of ring
+                            st_buffer(dist = -simplify_buffer_distance) %>%
+                            st_buffer(dist = simplify_buffer_distance),
+                          keep = 0.1) %>%
+  clean_simplified_layers(
+    original_layers = final_layer_cake,
+    min_area = simplify_min_area,
+    snap_tolerance = simplify_snap_tolerance
+  )
 
 mapview(simp_final, z = "z_layer")
 
