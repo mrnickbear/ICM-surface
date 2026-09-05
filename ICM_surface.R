@@ -415,15 +415,21 @@ print(final_layer_cake %>% st_drop_geometry() %>% select(z_layer, area))
 # mapview(final_layer_cake, z = "z_layer")
 
 
-simplify_buffer_distance <- 5
+simplify_buffer_distance <- 1
 simplify_min_area <- 20
-simplify_snap_tolerance <- simplify_buffer_distance * 2
+simplify_snap_tolerance <- simplify_buffer_distance/2
 
 simp_final <- ms_simplify(final_layer_cake %>% 
                             # Dual buffers to remove thin parts of ring
                             st_buffer(dist = -simplify_buffer_distance) %>%
                             st_buffer(dist = simplify_buffer_distance),
-                          keep = 0.1) %>%
+                          
+                          #Percentage to keep  
+                          keep = 0.1
+                          
+                          # #mapproximate size of the smallest details in the simplified output.
+                          # interval = 2
+                          ) %>%
   clean_simplified_layers(
     original_layers = final_layer_cake,
     min_area = simplify_min_area,
@@ -432,6 +438,10 @@ simp_final <- ms_simplify(final_layer_cake %>%
 
 mapview(simp_final, z = "z_layer")
 
+
+simp_final_cd <- simp_final %>% mutate(CD = z_layer - 11.35)
+
+st_write(simp_final_cd, "simp_final.shp", append=FALSE)
 
 # mapview(raw_data)
 # mapview(contours_simple)
